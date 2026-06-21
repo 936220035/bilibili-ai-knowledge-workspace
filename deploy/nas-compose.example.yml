@@ -6,7 +6,7 @@ services:
     container_name: bilibili-summary
     restart: unless-stopped
     ports:
-      - "100.117.163.81:18520:18520"
+      - "0.0.0.0:18520:18520"
     volumes:
       - ./runtime:/app/runtime
       - ./exports:/app/data/exports
