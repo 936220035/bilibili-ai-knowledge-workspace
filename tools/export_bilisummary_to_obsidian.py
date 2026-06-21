@@ -5,14 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = WORKSPACE_ROOT / "bilibili-summary" / "summary"
-DEFAULT_VAULT = Path(r"C:\Users\龙城\Documents\Obsidian\个人知识库")
+DEFAULT_SOURCE = Path(os.environ.get("BILISUMMARY_SUMMARY_DIR", WORKSPACE_ROOT / "bilibili-summary" / "summary"))
+DEFAULT_VAULT = Path(os.environ.get("OBSIDIAN_VAULT_PATH", r"C:\Users\龙城\Documents\Obsidian\个人知识库"))
 DEFAULT_DEST = DEFAULT_VAULT / "04-资源库" / "学习笔记" / "B站视频总结"
 PROJECT_LINK = "[[03-项目库/项目机会/让AI替你看B站项目]]"
 
@@ -76,6 +77,11 @@ def load_summary(md_path: Path) -> dict:
     author = meta.get("author_name") or extract_first(AUTHOR_RE, text)
     generated_at = meta.get("generated_at") or extract_first(GENERATED_RE, text)
 
+    try:
+        relative_source_path = str(md_path.relative_to(WORKSPACE_ROOT))
+    except ValueError:
+        relative_source_path = str(md_path)
+
     return {
         "title": str(title).strip(),
         "bvid": str(bvid).strip(),
@@ -86,7 +92,7 @@ def load_summary(md_path: Path) -> dict:
         "cover_url": meta.get("cover_url", ""),
         "generated_at": str(generated_at).strip(),
         "source_path": str(md_path),
-        "relative_source_path": str(md_path.relative_to(WORKSPACE_ROOT)),
+        "relative_source_path": relative_source_path,
         "content": text.strip() + "\n",
         "failed": is_failed_summary(text),
     }
