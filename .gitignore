@@ -1,0 +1,43 @@
+.env
+*.env
+.env.local
+*.env.local
+.env.*
+cookies*
+token*
+session*
+config.local.*
+config.json
+__pycache__/
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+node_modules/
+.tmp-downloads/
+
+# Local/private runtime data
+data/private/
+data/comment-drafts/
+data/exports/
+data/summaries/
+data/topics/
+!data/config/
+!data/config/*.example.csv
+!data/config/bilibili_creators.example.csv
+data/config/bilibili_creators.csv
+!data/**/.gitkeep
+
+# BiliSummary runtime outputs and secrets
+bilibili-summary/.env.local
+bilibili-summary/.env.*
+bilibili-summary/ass/
+bilibili-summary/summary/
+bilibili-summary/server.log
+bilibili-summary/server.err.log
+bilibili-summary/.agent/
+
+# bilibili-ai-bot runtime outputs and secrets
+bilibili-ai-bot/data/
+bilibili-ai-bot/config.json
+bilibili-ai-bot/local-chat*.log
+bilibili-ai-bot/*.log
