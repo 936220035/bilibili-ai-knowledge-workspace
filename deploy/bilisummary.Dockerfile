@@ -11,10 +11,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY bilibili-summary/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 
