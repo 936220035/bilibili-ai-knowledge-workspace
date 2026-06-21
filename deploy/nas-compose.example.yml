@@ -1,0 +1,20 @@
+services:
+  bilibili-summary:
+    build:
+      context: ./repo
+      dockerfile: deploy/bilisummary.Dockerfile
+    container_name: bilibili-summary
+    restart: unless-stopped
+    ports:
+      - "100.117.163.81:18520:18520"
+    volumes:
+      - ./runtime:/app/runtime
+      - ./exports:/app/data/exports
+      - ./topics:/app/data/topics
+      - /volume3/obsidian/personal-knowledge:/obsidian
+    environment:
+      BILISUMMARY_BUNDLE_DIR: /app/bilibili-summary
+      BILISUMMARY_DATA_DIR: /app/runtime
+      BILISUMMARY_ENV_FILE: /app/runtime/.env.local
+      BILISUMMARY_SUMMARY_DIR: /app/runtime/summary
+      OBSIDIAN_VAULT_PATH: /obsidian

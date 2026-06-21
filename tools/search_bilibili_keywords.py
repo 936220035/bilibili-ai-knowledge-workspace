@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import time
 import urllib.parse
@@ -12,7 +13,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ENV_FILE = ROOT / "bilibili-summary" / ".env.local"
+ENV_FILE = Path(os.environ.get("BILISUMMARY_ENV_FILE", ROOT / "bilibili-summary" / ".env.local"))
 EXPORT_DIR = ROOT / "data" / "exports"
 TOPIC_DIR = ROOT / "data" / "topics"
 FIELDS = ["keyword", "rank", "title", "bvid", "author", "mid", "url", "play", "danmaku", "duration", "pubdate", "description"]
