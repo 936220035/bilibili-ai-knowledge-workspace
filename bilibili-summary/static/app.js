@@ -36,6 +36,8 @@ let currentBrowseType = '';
 let knowledgeItems = [];
 let favViewMode = localStorage.getItem('bilisummary-fav-view') || 'thumb';
 let currentFavVideos = [];
+let keywordSearchRows = [];
+let keywordSelectedBvids = new Set();
 
 const STATUS_META = {
     processing: { label: '处理中', tone: 'info' },
@@ -1198,7 +1200,7 @@ function listenProgress(taskId, prefix) {
             case 'done':
                 isDone = true;
                 submitBtn.disabled = false;
-                submitBtn.innerHTML = '<i data-lucide="play" class="lucide-icon icon-sm"></i> 开始总结';
+                submitBtn.innerHTML = progressSubmitLabel(prefix);
                 lucide.createIcons({ nodes: [submitBtn] });
                 addLog(logEl, `完成: 成功 ${d.success} | 已跳过 ${d.skipped} | 无字幕 ${d.no_subtitle} | 失败 ${d.errors}`, 'info');
                 progressBar.style.width = '100%';
@@ -1266,7 +1268,7 @@ function listenProgress(taskId, prefix) {
 
         if (!isDone) {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i data-lucide="play" class="lucide-icon icon-sm"></i> 开始总结';
+            submitBtn.innerHTML = progressSubmitLabel(prefix);
             lucide.createIcons({ nodes: [submitBtn] });
             addLog(logEl, '连接中断，可重新点击开始总结', 'error');
         }
@@ -1275,13 +1277,27 @@ function listenProgress(taskId, prefix) {
     connectSSE();
 }
 
+function progressSubmitLabel(prefix) {
+    if (prefix === 'keyword') return '<i data-lucide="search" class="lucide-icon icon-sm"></i> 开始搜索';
+    return '<i data-lucide="play" class="lucide-icon icon-sm"></i> 开始总结';
+}
+
 // ---------------------------------------------------------------------------
 // Inline Results
 // ---------------------------------------------------------------------------
 async function showInlineResults(container, results) {
     if (!results.length) return;
 
-    container.innerHTML = `<div class="card"><div class="card-title"><i data-lucide="file-text" class="lucide-icon icon-md"></i> 生成的总结 (${results.length})</div><div id="resultsList"></div></div>`;
+    const exportablePaths = results.filter(r => r.path && r.status !== 'no_subtitle').map(r => r.path);
+    container.innerHTML = `
+        <div class="card">
+            <div class="card-header-inline">
+                <div class="card-title card-title-tight"><i data-lucide="file-text" class="lucide-icon icon-md"></i> 生成的总结 (${results.length})</div>
+                ${exportablePaths.length ? `<button class="btn btn-secondary btn-secondary-xs" type="button" onclick="bulkExportInlineResults(${escapeAttr(JSON.stringify(exportablePaths))}, this)"><i data-lucide="database" class="lucide-icon icon-xs"></i> 批量导入知识库</button>` : ''}
+            </div>
+            <div id="resultsList" class="mt-3"></div>
+        </div>
+    `;
     lucide.createIcons({ nodes: [container] });
     const list = container.querySelector('#resultsList');
 
@@ -1295,6 +1311,7 @@ async function showInlineResults(container, results) {
         const card = document.createElement('div');
         card.className = 'result-card';
         if (index === 0) card.classList.add('expanded');
+        const canExport = r.path && r.status !== 'no_subtitle';
         card.innerHTML = `
             <div class="result-card-header" onclick="toggleResultCard(this)">
                 <span class="title">${escapeHtml(r.title)}</span>
@@ -1302,6 +1319,7 @@ async function showInlineResults(container, results) {
                 <span class="chevron"><i data-lucide="chevron-right" class="lucide-icon"></i></span>
             </div>
             <div class="result-card-body">
+                ${canExport ? `<div class="inline-result-actions"><button class="action-btn action-btn-obsidian" type="button" onclick="exportSummaryToObsidian('${escapeJs(r.path)}', this)"><i data-lucide="database" class="lucide-icon icon-xs"></i> 导入知识库</button></div>` : ''}
                 <div class="reading-content pt-3">加载中...</div>
             </div>
         `;
@@ -1322,6 +1340,47 @@ async function showInlineResults(container, results) {
 
 function toggleResultCard(header) {
     header.parentElement.classList.toggle('expanded');
+}
+
+async function bulkExportInlineResults(paths, btnEl) {
+    if (!Array.isArray(paths) || paths.length === 0) return;
+    const originalHtml = btnEl?.innerHTML || '';
+    if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerHTML = '<span class="spinner"></span> 导入中...';
+    }
+
+    let ok = 0;
+    let failed = 0;
+    for (const path of paths) {
+        try {
+            const res = await fetch('/api/export/obsidian', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path }),
+            });
+            const data = await res.json();
+            if (!res.ok || data.error) failed++;
+            else ok++;
+        } catch {
+            failed++;
+        }
+    }
+
+    if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = originalHtml;
+        lucide.createIcons({ nodes: [btnEl] });
+    }
+
+    showToast({
+        title: '知识库导入完成',
+        message: `成功 ${ok} 篇，失败 ${failed} 篇`,
+        tone: failed ? 'error' : 'success',
+        duration: 6000,
+    });
+    loadSidebarBrowse();
+    loadKnowledgeBase();
 }
 
 // ---------------------------------------------------------------------------
@@ -1429,7 +1488,8 @@ async function submitKeywordSearch() {
     const keywords = document.getElementById('keywordInput').value.trim();
     const pages = parseInt(document.getElementById('keywordPages').value, 10) || 1;
     const sleep = parseFloat(document.getElementById('keywordSleep').value) || 0.8;
-    const results = document.getElementById('keywordResults');
+    const results = document.getElementById('keywordSearchResults');
+    const summaryResults = document.getElementById('keywordResults');
     const btn = document.getElementById('keywordSubmit');
 
     if (!keywords) {
@@ -1438,6 +1498,10 @@ async function submitKeywordSearch() {
     }
 
     btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 搜索中...';
+    keywordSearchRows = [];
+    keywordSelectedBvids = new Set();
+    if (summaryResults) summaryResults.innerHTML = '';
     renderState(results, { type: 'loading', title: '搜索中', message: '正在请求 B站公开视频搜索接口' });
 
     try {
@@ -1456,12 +1520,16 @@ async function submitKeywordSearch() {
         renderState(results, { type: 'error', title: '搜索失败', message: err.message });
     } finally {
         btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="search" class="lucide-icon icon-sm"></i> 开始搜索';
+        lucide.createIcons({ nodes: [btn] });
     }
 }
 
 function renderKeywordResults(data) {
-    const results = document.getElementById('keywordResults');
-    const rows = data.rows || [];
+    const results = document.getElementById('keywordSearchResults');
+    const rows = dedupeKeywordRows(data.rows || []);
+    keywordSearchRows = rows;
+    keywordSelectedBvids = new Set();
     const warningHtml = (data.warnings || []).length
         ? `<div class="insight-warning">${(data.warnings || []).map(w => escapeHtml(w)).join('<br>')}</div>`
         : '';
@@ -1485,40 +1553,158 @@ function renderKeywordResults(data) {
         return;
     }
 
-    const tableRows = rows.map(row => `
-        <tr>
-            <td>${escapeHtml(row.keyword || '')}</td>
-            <td><a href="${escapeAttr(row.url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.title || '')}</a></td>
-            <td>${escapeHtml(row.author || '')}</td>
-            <td class="num">${escapeHtml(String(row.play || ''))}</td>
-            <td class="num">${escapeHtml(String(row.danmaku || ''))}</td>
-            <td>${escapeHtml(row.duration || '')}</td>
-        </tr>
-    `).join('');
-
     results.innerHTML = `
-        <div class="card">
-            <div class="card-title"><i data-lucide="list-video" class="lucide-icon icon-md"></i> 搜索结果：${data.count} 条</div>
+        <div class="card keyword-workbench">
+            <div class="keyword-workbench-head">
+                <div>
+                    <div class="card-title card-title-tight"><i data-lucide="list-checks" class="lucide-icon icon-md"></i> 关键词研究结果</div>
+                    <p class="keyword-workbench-sub">共拿到 ${data.count} 条，去重后可选 ${rows.length} 条。选出适合模仿、拆脚本、学剪辑的视频后再总结。</p>
+                </div>
+                <div class="keyword-selection-count"><span id="keywordSelectedCount">0</span> / ${rows.length} 已选</div>
+            </div>
             ${warningHtml}
             ${outputHtml}
-            <div class="insight-table-wrap">
-                <table class="insight-table">
-                    <thead>
-                        <tr>
-                            <th>关键词</th>
-                            <th>视频</th>
-                            <th>UP主</th>
-                            <th>播放</th>
-                            <th>弹幕</th>
-                            <th>时长</th>
-                        </tr>
-                    </thead>
-                    <tbody>${tableRows}</tbody>
-                </table>
+            <div class="keyword-selection-bar">
+                <button class="btn btn-secondary btn-secondary-xs" type="button" onclick="selectAllKeywordResults()"><i data-lucide="check-square" class="lucide-icon icon-xs"></i> 全选</button>
+                <button class="btn btn-secondary btn-secondary-xs" type="button" onclick="clearKeywordSelection()"><i data-lucide="square" class="lucide-icon icon-xs"></i> 清空</button>
+                <button class="btn btn-primary btn-sm" id="keywordSummarizeSelected" type="button" onclick="summarizeSelectedKeywordVideos()" disabled><i data-lucide="sparkles" class="lucide-icon icon-sm"></i> 总结选中</button>
+            </div>
+            <div class="keyword-video-list">
+                ${rows.map(renderKeywordVideoItem).join('')}
             </div>
         </div>
     `;
     lucide.createIcons({ nodes: [results] });
+    updateKeywordSelectionUI();
+}
+
+function dedupeKeywordRows(rows) {
+    const seen = new Set();
+    const deduped = [];
+    for (const row of rows) {
+        const bvid = normalizeBvid(row.bvid || extractBvidFromUrl(row.url));
+        if (!bvid || seen.has(bvid)) continue;
+        seen.add(bvid);
+        deduped.push({ ...row, bvid, url: row.url || `https://www.bilibili.com/video/${bvid}` });
+    }
+    return deduped;
+}
+
+function normalizeBvid(text) {
+    const match = String(text || '').match(/BV[0-9A-Za-z]+/);
+    return match ? match[0] : '';
+}
+
+function extractBvidFromUrl(url) {
+    return normalizeBvid(url);
+}
+
+function renderKeywordVideoItem(row, index) {
+    const bvid = row.bvid || extractBvidFromUrl(row.url);
+    const play = parseInt(row.play, 10) || 0;
+    const danmaku = parseInt(row.danmaku, 10) || 0;
+    const hotBadge = play >= 100000
+        ? '<span class="keyword-video-badge hot">爆款参考</span>'
+        : play >= 10000
+            ? '<span class="keyword-video-badge warm">值得拆</span>'
+            : '';
+    return `
+        <label class="keyword-video-item" data-bvid="${escapeAttr(bvid)}">
+            <input class="keyword-video-checkbox" type="checkbox" onchange="toggleKeywordSelection('${escapeJs(bvid)}', this.checked)">
+            <span class="keyword-video-rank">${index + 1}</span>
+            <span class="keyword-video-main">
+                <span class="keyword-video-title-row">
+                    <a class="keyword-video-title" href="${escapeAttr(row.url || '#')}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.title || bvid)}</a>
+                    ${hotBadge}
+                </span>
+                <span class="keyword-video-meta">
+                    <span><i data-lucide="search" class="lucide-icon icon-xs"></i> ${escapeHtml(row.keyword || '关键词')}</span>
+                    <span><i data-lucide="user" class="lucide-icon icon-xs"></i> ${escapeHtml(row.author || '未知UP')}</span>
+                    <span><i data-lucide="play" class="lucide-icon icon-xs"></i> ${escapeHtml(formatKeywordNumber(play))}</span>
+                    <span><i data-lucide="message-square" class="lucide-icon icon-xs"></i> ${escapeHtml(formatKeywordNumber(danmaku))}</span>
+                    <span><i data-lucide="clock" class="lucide-icon icon-xs"></i> ${escapeHtml(row.duration || '--')}</span>
+                    <span class="keyword-video-bvid">${escapeHtml(bvid)}</span>
+                </span>
+            </span>
+        </label>
+    `;
+}
+
+function formatKeywordNumber(value) {
+    const n = Number(value) || 0;
+    if (n >= 100000000) return (n / 100000000).toFixed(1) + '亿';
+    if (n >= 10000) return (n / 10000).toFixed(1) + '万';
+    return String(n);
+}
+
+function toggleKeywordSelection(bvid, checked) {
+    if (!bvid) return;
+    if (checked) keywordSelectedBvids.add(bvid);
+    else keywordSelectedBvids.delete(bvid);
+    updateKeywordSelectionUI();
+}
+
+function selectAllKeywordResults() {
+    keywordSelectedBvids = new Set(keywordSearchRows.map(row => row.bvid).filter(Boolean));
+    updateKeywordSelectionUI();
+}
+
+function clearKeywordSelection() {
+    keywordSelectedBvids = new Set();
+    updateKeywordSelectionUI();
+}
+
+function updateKeywordSelectionUI() {
+    document.querySelectorAll('.keyword-video-item').forEach(item => {
+        const bvid = item.dataset.bvid;
+        const checked = keywordSelectedBvids.has(bvid);
+        item.classList.toggle('selected', checked);
+        const input = item.querySelector('input[type="checkbox"]');
+        if (input) input.checked = checked;
+    });
+
+    const countEl = document.getElementById('keywordSelectedCount');
+    if (countEl) countEl.textContent = String(keywordSelectedBvids.size);
+    const summarizeBtn = document.getElementById('keywordSummarizeSelected');
+    if (summarizeBtn) summarizeBtn.disabled = keywordSelectedBvids.size === 0;
+}
+
+async function summarizeSelectedKeywordVideos() {
+    const selectedRows = keywordSearchRows.filter(row => keywordSelectedBvids.has(row.bvid));
+    if (!selectedRows.length) {
+        await showAlert('先选择要拆解的视频。', '未选择视频');
+        return;
+    }
+
+    const concurrency = parseInt(document.getElementById('keywordConcurrency')?.value, 10) || 6;
+    const urls = selectedRows.map(row => row.url || `https://www.bilibili.com/video/${row.bvid}`);
+    const btn = document.getElementById('keywordSummarizeSelected');
+
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> 创建任务...';
+        }
+        const res = await fetch('/api/summarize/url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ urls, concurrency }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+            await showAlert(data.error || '创建总结任务失败', '请求失败');
+            return;
+        }
+        listenProgress(data.task_id, 'keyword');
+    } catch (err) {
+        await showAlert('请求失败: ' + err.message, '请求失败');
+    } finally {
+        if (btn) {
+            btn.disabled = keywordSelectedBvids.size === 0;
+            btn.innerHTML = '<i data-lucide="sparkles" class="lucide-icon icon-sm"></i> 总结选中';
+            lucide.createIcons({ nodes: [btn] });
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

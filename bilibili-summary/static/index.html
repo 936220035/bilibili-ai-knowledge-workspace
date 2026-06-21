@@ -35,7 +35,7 @@
                         <span class="icon"><i data-lucide="user" class="lucide-icon"></i></span> UP 主模式
                     </div>
                     <div class="nav-item" data-page="keyword-page">
-                        <span class="icon"><i data-lucide="search" class="lucide-icon"></i></span> 关键词搜索
+                        <span class="icon"><i data-lucide="search-check" class="lucide-icon"></i></span> 关键词模式
                     </div>
                     <div class="nav-item" data-page="knowledge-page">
                         <span class="icon"><i data-lucide="library" class="lucide-icon"></i></span> 知识库
@@ -162,11 +162,11 @@
                 </div>
             </div>
 
-            <!-- Keyword Search Page -->
+            <!-- Keyword Mode Page -->
             <div class="page" id="keyword-page">
                 <div class="main-header">
-                    <h2><i data-lucide="search" class="lucide-icon"></i> 关键词搜索</h2>
-                    <p>按关键词搜索 B站公开视频，查看播放、弹幕和视频链接</p>
+                    <h2><i data-lucide="search-check" class="lucide-icon"></i> 关键词模式</h2>
+                    <p>搜索题材关键词，选择值得研究的视频，批量总结后沉淀到知识库</p>
                 </div>
                 <div class="main-body">
                     <div class="card">
@@ -183,10 +183,25 @@
                                 <label>间隔秒数</label>
                                 <input class="input" id="keywordSleep" type="number" value="0.8" min="0.1" max="5" step="0.1">
                             </div>
+                            <div class="form-group">
+                                <label>总结并发数</label>
+                                <input class="input" id="keywordConcurrency" type="number" value="6" min="1" max="20">
+                            </div>
                         </div>
                         <button class="btn btn-primary" id="keywordSubmit" onclick="submitKeywordSearch()">
                             <i data-lucide="search" class="lucide-icon icon-sm"></i> 开始搜索
                         </button>
+                    </div>
+                    <div class="results-area" id="keywordSearchResults"></div>
+                    <div class="progress-area" id="keywordProgress">
+                        <div class="card">
+                            <div class="card-title"><i data-lucide="bar-chart-3" class="lucide-icon icon-md"></i> 总结进度</div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" id="keywordProgressBar"></div>
+                            </div>
+                            <div class="progress-stats" id="keywordStats"></div>
+                            <div class="log-container" id="keywordLog"></div>
+                        </div>
                     </div>
                     <div class="results-area" id="keywordResults"></div>
                 </div>
